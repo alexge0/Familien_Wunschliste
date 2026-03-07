@@ -82,8 +82,9 @@
     .wish-tag   { font-size:.72rem; background:var(--warm); color:var(--muted); border-radius:50px; padding:.2rem .65rem; font-weight:500; }
     .wish-note  { font-size:.85rem; color:var(--muted); font-style:italic; }
     .wish-actions { display:flex; flex-direction:column; gap:.5rem; flex-shrink:0; }
-    .wish-link-btn, .wish-del-btn { border:none; border-radius:8px; padding:.4rem .75rem; font-size:.78rem; font-weight:500; cursor:pointer; transition:background .2s; font-family:'DM Sans',sans-serif; white-space:nowrap; }
+    .wish-link-btn, .wish-del-btn, .wish-edit-btn { border:none; border-radius:8px; padding:.4rem .75rem; font-size:.78rem; font-weight:500; cursor:pointer; transition:background .2s; font-family:'DM Sans',sans-serif; white-space:nowrap; }
     .wish-link-btn { background:var(--soft); color:var(--brown); } .wish-link-btn:hover { background:var(--warm); }
+    .wish-edit-btn { background:#e8f0fb; color:#3a5fa6; }         .wish-edit-btn:hover { background:#d0e0f7; }
     .wish-del-btn  { background:#fce8e8; color:#b94040; }         .wish-del-btn:hover  { background:#f5cccc; }
 
     .loading-state { text-align:center; padding:3rem 2rem; color:var(--muted); }
@@ -202,8 +203,8 @@
         <input type="text" id="f-name" placeholder="z.B. Rotes Kleid von Zara" />
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Preis <span class="req">*</span></label><input type="text" id="f-price" placeholder="z.B. 49,99 €" /></div>
-        <div class="form-group"><label>Link <span class="req">*</span></label><input type="url" id="f-link" placeholder="https://…" /></div>
+        <div class="form-group"><label>Preis</label><input type="text" id="f-price" placeholder="z.B. 49,99 €" /></div>
+        <div class="form-group"><label>Link</label><input type="url" id="f-link" placeholder="https://…" /></div>
       </div>
       <div class="optional-section">
         <div class="optional-label">Optional</div>
@@ -233,7 +234,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, collection, addDoc, deleteDoc, doc,
-           onSnapshot, serverTimestamp, query, orderBy }
+           onSnapshot, serverTimestamp }
     from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   // ── Firebase Config ──────────────────────────────────────────
@@ -262,16 +263,33 @@
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+  // ── Sorting ──────────────────────────────────────────────────
+  // Prio order: hoch=0, mittel=1, niedrig=2, none=3
+  const prioOrder = { hoch:0, mittel:1, niedrig:2, '':3 };
+
+  function sortWishes(list) {
+    return [...list].sort((a, b) => {
+      const pa = prioOrder[a.prio||''] ?? 3;
+      const pb = prioOrder[b.prio||''] ?? 3;
+      if (pa !== pb) return pa - pb;
+      // same prio → sort by createdAt ascending (oldest first within same prio)
+      const ta = a.createdAt?.seconds ?? 0;
+      const tb = b.createdAt?.seconds ?? 0;
+      return ta - tb;
+    });
+  }
+
   // ── Realtime listeners ───────────────────────────────────────
   const prioEmoji = { hoch:'🔴', mittel:'🟡', niedrig:'🔵', '':'🎁' };
 
   ['martin','sabine','alex'].forEach(person => {
-    const q = query(collection(db,'wishes_'+person), orderBy('createdAt','desc'));
+    // Fetch all, sort client-side (avoids Firestore composite index requirement)
+    const q = collection(db, 'wishes_'+person);
     onSnapshot(q, snap => {
       const list = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       const n = list.length;
       $('count-'+person).textContent = n === 1 ? '1 Wunsch' : n + ' Wünsche';
-      renderWishes(person, list);
+      renderWishes(person, sortWishes(list));
       setSyncState('synced','Verbunden');
     }, () => setSyncState('error','Verbindungsfehler'));
   });
@@ -293,13 +311,14 @@
         <div class="wish-prio ${w.prio||''}">${prioEmoji[w.prio||'']}</div>
         <div class="wish-body">
           <div class="wish-name">${esc(w.name)}</div>
-          <div class="wish-price">${esc(w.price)}</div>
+          ${w.price ? `<div class="wish-price">${esc(w.price)}</div>` : ''}
           ${tags.length ? `<div class="wish-tags">${tags.map(t=>`<span class="wish-tag">${esc(t)}</span>`).join('')}</div>` : ''}
           ${w.note ? `<div class="wish-note">${esc(w.note)}</div>` : ''}
         </div>
         <div class="wish-actions">
           ${w.link ? `<button class="wish-link-btn" onclick="window.open('${esc(w.link)}','_blank','noopener')">🔗 Link</button>` : ''}
-          <button class="wish-del-btn" onclick="window._del('${person}','${w.id}')">✕</button>
+          <button class="wish-edit-btn" onclick="window._edit('${person}','${w.id}')">✏️ Bearbeiten</button>
+          <button class="wish-del-btn"  onclick="window._del('${person}','${w.id}')">✕ Löschen</button>
         </div>
       </div>`;
     }).join('');
@@ -318,45 +337,84 @@
   // ── CRUD ─────────────────────────────────────────────────────
   window._del = async (person, id) => {
     if (!confirm('Wunsch wirklich löschen?')) return;
-    setSyncState('syncing','Speichert…');
+    setSyncState('syncing','Löscht…');
     await deleteDoc(doc(db, 'wishes_'+person, id));
   };
 
-  // ── Modal ────────────────────────────────────────────────────
+  // ── Modal state ──────────────────────────────────────────────
+  let editId = null; // null = new wish, string = doc id being edited
+
+  function fillModal(w = {}) {
+    ['name','price','link','size','color','alt','note'].forEach(k => $('f-'+k).value = w[k] || '');
+    $('f-prio').value = w.prio || '';
+  }
+
   window._openModal = person => {
-    currentPerson = person;
+    currentPerson = person; editId = null;
     $('modal-title').textContent = 'Neuer Wunsch für ' +
       person.charAt(0).toUpperCase() + person.slice(1);
-    ['name','price','link','size','color','alt','note'].forEach(id => $('f-'+id).value = '');
-    $('f-prio').value = '';
+    fillModal();
     const btn = $('save-btn'); btn.disabled = false; btn.textContent = 'Wunsch speichern';
     $('modal').classList.add('open');
     setTimeout(() => $('f-name').focus(), 100);
   };
 
-  window._closeModal = () => $('modal').classList.remove('open');
+  window._edit = (person, id) => {
+    // Find the wish data from the already-rendered list
+    const card = [...document.querySelectorAll(`#wishes-${person} .wish-card`)]
+      .find(el => el.querySelector('.wish-edit-btn')?.getAttribute('onclick')?.includes(`'${id}'`));
+    // Re-fetch from Firestore to be safe
+    currentPerson = person; editId = id;
+    $('modal-title').textContent = 'Wunsch bearbeiten';
+    // Pull values from what we have in memory via the cached snapshot
+    const cached = _wishCache[person]?.find(w => w.id === id) || {};
+    fillModal(cached);
+    const btn = $('save-btn'); btn.disabled = false; btn.textContent = 'Änderungen speichern';
+    $('modal').classList.add('open');
+    setTimeout(() => $('f-name').focus(), 100);
+  };
+
+  // Cache latest snapshot per person for edit prefill
+  const _wishCache = {};
+  ['martin','sabine','alex'].forEach(person => {
+    const q = collection(db, 'wishes_'+person);
+    onSnapshot(q, snap => {
+      _wishCache[person] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    });
+  });
+
+  window._closeModal = () => { $('modal').classList.remove('open'); editId = null; };
 
   window._saveWish = async () => {
-    const name  = $('f-name').value.trim();
-    const price = $('f-price').value.trim();
-    const link  = $('f-link').value.trim();
-    if (!name)  { alert('Bitte eine Bezeichnung eingeben.'); return; }
-    if (!price) { alert('Bitte einen Preis eingeben.');      return; }
-    if (!link)  { alert('Bitte einen Link eingeben.');       return; }
+    const name = $('f-name').value.trim();
+    if (!name) { alert('Bitte eine Bezeichnung eingeben.'); return; }
 
     const btn = $('save-btn');
     btn.disabled = true; btn.textContent = 'Speichert…';
     setSyncState('syncing','Speichert…');
 
-    await addDoc(collection(db, 'wishes_'+currentPerson), {
-      name, price, link,
+    const data = {
+      name,
+      price: $('f-price').value.trim(),
+      link:  $('f-link').value.trim(),
       size:  $('f-size').value.trim(),
       color: $('f-color').value.trim(),
       alt:   $('f-alt').value.trim(),
       prio:  $('f-prio').value,
       note:  $('f-note').value.trim(),
-      createdAt: serverTimestamp(),
-    });
+    };
+
+    if (editId) {
+      // Update existing document (preserve createdAt)
+      const { updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+      await updateDoc(doc(db, 'wishes_'+currentPerson, editId), data);
+    } else {
+      // New document
+      await addDoc(collection(db, 'wishes_'+currentPerson), {
+        ...data,
+        createdAt: serverTimestamp(),
+      });
+    }
     window._closeModal();
   };
 
