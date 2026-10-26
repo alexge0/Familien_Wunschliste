@@ -10,6 +10,7 @@
     :root {
       --cream: #faf6f0; --warm: #f0e8d8; --brown: #3d2b1f;
       --accent: #c4733a; --accent2: #7c9e6e; --accent3: #5b7fa6;
+      --accent4: #b477a3;
       --soft: #e8ddd0; --text: #2a1e15; --muted: #8a7060;
       --white: #ffffff;
       --shadow: 0 4px 24px rgba(61,43,31,0.10);
@@ -40,11 +41,13 @@
     .person-card.martin::before { background:var(--accent); }
     .person-card.sabine::before { background:var(--accent2); }
     .person-card.alex::before   { background:var(--accent3); }
+    .person-card.pia::before    { background:var(--accent4); }
     .person-card:hover { transform:translateY(-6px); box-shadow:var(--shadow-lg); }
     .person-avatar { width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.75rem; margin:0 auto 1rem; }
     .martin .person-avatar { background:#fdebd0; }
     .sabine .person-avatar { background:#e8f5e2; }
     .alex   .person-avatar { background:#dceaf5; }
+    .pia    .person-avatar { background:#f7e5f1; }
     .person-card h2 { font-family:'Playfair Display',serif; font-size:1.3rem; font-weight:700; color:var(--brown); }
     .person-card .wish-count { font-size:.8rem; color:var(--muted); margin-top:.3rem; }
 
@@ -67,6 +70,7 @@
     .add-btn:hover { background:#b5632b; transform:scale(1.03); }
     .page-sabine .add-btn { background:var(--accent2); } .page-sabine .add-btn:hover { background:#6a8e5e; } .page-sabine .page-tag { color:var(--accent2); }
     .page-alex   .add-btn { background:var(--accent3); } .page-alex   .add-btn:hover { background:#4a6e95; } .page-alex   .page-tag { color:var(--accent3); }
+    .page-pia    .add-btn { background:var(--accent4); } .page-pia    .add-btn:hover { background:#9c608d; } .page-pia    .page-tag { color:var(--accent4); }
 
     /* SORT TOGGLE */
     .sort-bar { display:flex; align-items:center; gap:.5rem; margin-bottom:1.25rem; }
@@ -76,6 +80,7 @@
     .sort-btn.active { background:var(--accent); border-color:var(--accent); color:var(--white); }
     .page-sabine .sort-btn.active { background:var(--accent2); border-color:var(--accent2); }
     .page-alex   .sort-btn.active { background:var(--accent3); border-color:var(--accent3); }
+    .page-pia    .sort-btn.active { background:var(--accent4); border-color:var(--accent4); }
 
     /* WISHES */
     .wishes-grid { display:grid; gap:1.25rem; }
@@ -156,6 +161,10 @@
         <div class="person-avatar">🧑</div><h2>Alex</h2>
         <div class="wish-count" id="count-alex">–</div>
       </div>
+      <div class="person-card pia" onclick="window._openPerson('pia')">
+        <div class="person-avatar">👩‍🦰</div><h2>Pia</h2>
+        <div class="wish-count" id="count-pia">–</div>
+      </div>
     </div>
   </section>
 
@@ -207,6 +216,23 @@
         <button class="sort-btn"        id="sort-alex-price" onclick="window._setSort('alex','price')">💶 Preis</button>
       </div>
       <div class="wishes-grid" id="wishes-alex"><div class="loading-state"><div class="spinner"></div>Lädt…</div></div>
+    </div>
+  </section>
+
+  <!-- PIA -->
+  <section id="page-pia" class="page page-pia">
+    <div class="person-page">
+      <button class="back-btn" onclick="window._goHome()">← Zurück</button>
+      <div class="page-header">
+        <div class="page-header-left"><div class="page-tag">Wunschliste</div><h2>👩‍🦰 Pia</h2></div>
+        <button class="add-btn" onclick="window._openModal('pia')">+ Wunsch hinzufügen</button>
+      </div>
+      <div class="sort-bar">
+        <span class="sort-label">Sortierung:</span>
+        <button class="sort-btn active" id="sort-pia-prio"  onclick="window._setSort('pia','prio')">🔴 Priorität</button>
+        <button class="sort-btn"        id="sort-pia-price" onclick="window._setSort('pia','price')">💶 Preis</button>
+      </div>
+      <div class="wishes-grid" id="wishes-pia"><div class="loading-state"><div class="spinner"></div>Lädt…</div></div>
     </div>
   </section>
 
@@ -289,7 +315,7 @@
 
   // ── Sorting ──────────────────────────────────────────────────
   const prioOrder = { hoch:0, mittel:1, niedrig:2, '':3 };
-  const sortMode  = { martin:'prio', sabine:'prio', alex:'prio' };
+  const sortMode  = { martin:'prio', sabine:'prio', alex:'prio', pia:'prio' };
 
   function parsePrice(str) {
     if (!str) return Infinity;
@@ -328,7 +354,7 @@
   // ── Realtime listeners ───────────────────────────────────────
   const prioEmoji = { hoch:'🔴', mittel:'🟡', niedrig:'🔵', '':'🎁' };
 
-  ['martin','sabine','alex'].forEach(person => {
+  ['martin','sabine','alex','pia'].forEach(person => {
     // Fetch all, sort client-side (avoids Firestore composite index requirement)
     const q = collection(db, 'wishes_'+person);
     onSnapshot(q, snap => {
@@ -422,7 +448,7 @@
 
   // Cache latest snapshot per person for edit prefill
   const _wishCache = {};
-  ['martin','sabine','alex'].forEach(person => {
+  ['martin','sabine','alex','pia'].forEach(person => {
     const q = collection(db, 'wishes_'+person);
     onSnapshot(q, snap => {
       _wishCache[person] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
